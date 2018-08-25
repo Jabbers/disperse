@@ -16,10 +16,12 @@ const config = require('js-yaml').safeLoad(fs.readFileSync('config.yaml', 'utf8'
 const gulp = require('gulp');
 const gulpif = require('gulp-if');
 const sftp = require('gulp-sftp');
+const hb = require('gulp-hb');
 const uglify = require('gulp-uglify');
 const cleanCSS = require('gulp-clean-css');
 const size = require('gulp-size');
 const print = require('gulp-print').default;
+const printSpaceSavings = require('gulp-print-spacesavings');
 const rename = require('gulp-rename');
 const changed = require('gulp-changed');
 
@@ -30,7 +32,7 @@ const domains = Object.keys(config.sites).filter(function(domain) {
 
 // Construct array of globs based on matched domains and cli glob
 const globs = domains.map(function(domain) {
-  return 'src/sites/' + domain + '/**/' + (argv.filter || '*');
+  return domain + '/**/' + (argv.filter || '*');
 });
 
 // Get a list of previously built files
@@ -40,6 +42,8 @@ const destFiles = glob.sync('build/*/**/*', { dot: true }).map(function(filePath
 
 // File filters
 const is = {
+  file: function(file) { return !file.isDirectory(); },
+  handlebars: function(file) { return file.extname === '.hbs'; },
   CSS: function(file) { return file.extname === '.css'; },
   JS: function(file) { return file.extname === '.js'; },
   uncompressedJS: function(file) { return file.basename.indexOf('.min.js') === -1; },
@@ -81,6 +85,7 @@ let deleteOrphans = lazypipe()
   .pipe(through2.obj,
     function onFile(file, _, cb) {
       buildFiles.push(file.relative);
+      this.push(file);
       cb();
     },
     function onEnd(cb) {
@@ -102,48 +107,68 @@ let compressCSS = lazypipe()
   .pipe(rename, { extname: '.min.css' });
 
 let buildJS = lazypipe()
+  .pipe(printSpaceSavings.init)
   .pipe(function() { return gulpif(is.uncompressedJS, compressJS()) })
+  .pipe(printSpaceSavings.print)
   .pipe(concatByExtname);
 
 let buildCSS = lazypipe()
+  .pipe(printSpaceSavings.init)
   .pipe(function() { return gulpif(is.uncompressedCSS, compressCSS()) })
+  .pipe(printSpaceSavings.print)
   .pipe(concatByExtname);
 
-let changedSha1Cache = lazypipe()
-  .pipe(changed, 'build/', { hasChanged: function (stream, source, targetPath) {
-    let domain = source.path.match(RegExp('build/([^/]+)')).pop();
-    if (package[domain].cache == null) {
-      // Set cacheId to child dir
-      let cachePath = path.join('cache', domain + '.json');
-      package[domain].cache = fs.readJsonSync(cachePath, {throws: false}) || {};
-      stream.setMaxListeners(50);
-      stream.once('end', function() {
-        fs.writeFileSync(cachePath, JSON.stringify(package[domain].cache, null, 2));
-      });
-    }
-    let relativeSourcePath = source.path.match(RegExp('build/?(.+)$')).pop();
-    let hashNew = crypto.createHash('sha1').update(source.contents).digest('hex');
-    if (hashNew !== package[domain].cache[relativeSourcePath]) {
-      stream.push(source);
-      package[domain].cache[relativeSourcePath] = hashNew;
-    }
-    return Promise.resolve();
-  }});
+let buildHTML = lazypipe()
+  .pipe(hb, {
+    debug: false,
+    helpers: [
+      'node_modules/handlebars-layouts'
+    ],
+    partials: [
+      'src/layouts/*.hbs',         // general layouts
+      'src/partials/*.hbs',        // general partials
+    ]
+  })
+  .pipe(rename, { extname: '.html' });
+
+// gulp-changed comparator using a SHA1 hash cache stored in [domain].json files
+let compareHashCache = function (stream, source, targetPath) {
+  let domain = source.path.match(RegExp('build/([^/]+)')).pop();
+  if (package[domain].cache == null) {
+    // Set cacheId to child dir
+    let cachePath = path.join('cache', domain + '.json');
+    package[domain].cache = fs.readJsonSync(cachePath, {throws: false}) || {};
+    stream.setMaxListeners(50);
+    stream.once('end', function() {
+      fs.writeFileSync(cachePath, JSON.stringify(package[domain].cache, null, 2));
+    });
+  }
+  let relativeSourcePath = source.path.match(RegExp('build/?(.+)$')).pop();
+  let hashNew = crypto.createHash('sha1').update(source.contents).digest('hex');
+  if (hashNew !== package[domain].cache[relativeSourcePath]) {
+    stream.push(source);
+    package[domain].cache[relativeSourcePath] = hashNew;
+  }
+  return Promise.resolve();
+};
 
 
 function build() {
 
-  return gulp.src(globs, { base: 'src/sites/', dot: true })
+  return gulp.src(globs, { base: 'src/sites/', cwd: 'src/sites/', dot: true })
+    .pipe(gulpif(is.handlebars, buildHTML()))
     .pipe(gulpif(is.JS, buildJS()))
     .pipe(gulpif(is.CSS, buildCSS()))
     .pipe(gulpif(!argv.filter, deleteOrphans()))
-    .pipe(print())
-    .pipe(size({ showFiles: false }))
-    .pipe(changed('build/', { hasChanged: changed.compareContents }))
+    //.pipe(print())
+    .pipe(gulpif(is.file, changed('build/', { hasChanged: changed.compareContents })))
+    // .pipe(size({ showFiles: false }))
     .pipe(gulp.dest('build/'));
+
 }
 
 function deploy() {
+
   return mergeStream(domains.map(function(domain) {
     let defaultSite = {
       host: 'ftp.' + domain,
@@ -156,23 +181,19 @@ function deploy() {
     switch (site.protocol) {
       case 'ftp':
         var conn = vinylFtp.create(site);
-        return gulp.src('build/' + domain + '/**', { buffer: false, dot: true })
-          // .pipe(argv.filter ? filter.input : plugin.util.noop())
+        return gulp.src(globs, { base: 'build/', cwd: 'build/', dot: true, buffer: false })
           .pipe(conn.differentSize(site.remotePath))
           .pipe(conn.dest(site.remotePath));
-          // .on('error', onError);
 
       case 'sftp':
-        return gulp.src('build/' + domain + '/**', { dot: true })
-          // .pipe(argv.filter ? filter.input : plugin.util.noop())
-          .pipe(changedSha1Cache()) // default: compareSha1Cache
-          .pipe(sftp(site)); // do ftp or sftp
-          //.pipe(plugin.util.noop())
-          //.on('error', onError);
+        return gulp.src(globs, { base: 'build/', cwd: 'build/', dot: true })
+          .pipe(gulpif(is.file, changed('build/', { hasChanged: compareHashCache })))
+          .pipe(sftp(site));
     }
   }));
+
 }
 
 
-exports.default = build;
+exports.default = exports.build = build;
 exports.deploy = deploy;
