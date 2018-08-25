@@ -31,7 +31,7 @@ Specify site by domain.
 
 Type: `Glob` Default: `undefined`
 
-Filter site files by glob. See (https://github.com/isaacs/node-glob)[node-glob] for the glob syntax.
+Filter site files by glob. See [node-glob](https://github.com/isaacs/node-glob) for the glob syntax.
 
 ## Configuration
 
@@ -40,7 +40,7 @@ Filter site files by glob. See (https://github.com/isaacs/node-glob)[node-glob] 
 
 - active: true|false
 - hosting: domain.com
-- panel: http://panel.com
+- panel: [url]
 - protocol: ftp|sftp
 - host
 - port
