@@ -1,5 +1,4 @@
 /* Disperse by Fred Steegmans (u/jabman) */
-/* npm install --save-dev gulp@next gulp-changed gulp-jscs gulp-uglify gulp-rename */
 
 const path = require('path');
 const fs = require('fs-extra');
@@ -153,6 +152,7 @@ let compareHashCache = function (stream, source, targetPath) {
 };
 
 
+// Build task
 function build() {
 
   return gulp.src(globs, { base: 'src/sites/', cwd: 'src/sites/', dot: true })
@@ -167,6 +167,7 @@ function build() {
 
 }
 
+// Deploy task
 function deploy() {
 
   return mergeStream(domains.map(function(domain) {
