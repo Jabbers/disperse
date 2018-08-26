@@ -1,6 +1,6 @@
-## Disperse
+# Disperse
 
-Builds websites from source and deploys them online.
+Builds websites from source and deploys them through FTP.
 
 ## Usage
 
@@ -10,7 +10,8 @@ gulp [build,deploy] [--site=domain.com] [--filter=regex]
 
 ### build, deploy
 
-Type: `String` Default: `build`
+Type: `String`
+Default: `build`
 
 Specify task(s) to perform on site(s).
 
@@ -23,13 +24,15 @@ Specify task(s) to perform on site(s).
 
 ### --site
 
-Type: `String` Default: sites with `active: true` in `config.yaml`
+Type: `String`
+Default: sites with `active: true` in `config.yaml`
 
 Specify site by domain.
 
 ### --filter
 
-Type: `Glob` Default: `undefined`
+Type: `Glob`
+Default: `undefined`
 
 Filter site files by glob. See [node-glob](https://github.com/isaacs/node-glob) for the glob syntax.
 
