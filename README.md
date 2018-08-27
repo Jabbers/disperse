@@ -5,7 +5,7 @@ Builds websites from source and deploys them through FTP.
 ## Usage
 
 ```
-gulp [build,deploy] [--site=domain.com] [--filter=regex]
+gulp [build,deploy] [--site=domain.com] [--filter=glob]
 ```
 
 ### build, deploy
@@ -15,12 +15,20 @@ Default: `build`
 
 Specify task(s) to perform on site(s).
 
-`build` generates site files from `src/sites/` into `build/`.
+#### build
 
-- [Handlebars](http://handlebarsjs.com) files (`.hbs`) are compiled with src/layouts and src/partials.
-- Javascript and CSS files are minimized and merged into app.min.js and app.min.css.
+Generates site files from `src/sites/` into `build/`.
 
-`deploy` uploads site files from `build/` to their remote location in `config.yaml`.
+- [Handlebars](http://handlebarsjs.com) files are compiled with `src/layouts` and `src/partials`.
+- Javascript and CSS files are minimized and merged into `app.min.js` and `app.min.css`.
+- Previously built files whose contents haven't changed are left untouched, while leftovers are pruned.
+
+#### deploy
+
+Uploads site files from `build/` to their remote location as defined in `config.yaml`.
+
+- Currently supported protocols are `ftp` and `sftp`.
+- Only changed files are uploaded and there's no pruning.
 
 ### --site
 
