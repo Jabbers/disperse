@@ -48,17 +48,28 @@ Filter site files by glob. See [node-glob](https://github.com/isaacs/node-glob) 
 
 ### Site settings `config.yaml`
 
-
-- active: true|false
-- hosting: domain.com
-- panel: [url]
-- protocol: ftp|sftp
-- host
-- port
-- user
-- pass
-- remotePath
-
+```
+sites:
+  yoursite.com:
+    active: true
+    url: https://yoursite.com/
+    formTarget: https://yoursite.com/target.php
+    analyticsEnabled: false
+    analyticsId: UA-
+    protocol: ftp
+    host: ftp.yoursite.com
+    port: 21
+    timeout:
+    remotePath: /www
+    user:
+    pass:
+    template:
+    description:
+    pages:
+      homepage: HTML page title goes here
+      [...]
+      contact: Page names become urls, i.e. yoursite.com/contact
+```
 
 ## Author
 
