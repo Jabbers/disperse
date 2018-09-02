@@ -1,0 +1,3 @@
+[submodule "src/templates/blitzee"]
+	path = src/templates/blitzee
+	url = git@github.com:jabbers/blitzee.git
