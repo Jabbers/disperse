@@ -37,7 +37,8 @@ const globs = domains
   // Start out with site template paths.
   .reduce((res, domain) => {
     let tpl = config.sites[domain].template;
-    let tplPath = `templates/${tpl}/**/*.!(hbs)`;
+    let excl = ['layout.hbs', 'README.md', 'LICENSE', 'package.json', '.git*'];
+    let tplPath = `templates/${tpl}/**/!(${excl.join('|')})`;
     if (tpl && res.indexOf(tplPath) < 0) {
       res.push(tplPath);
     }
