@@ -8,6 +8,8 @@ Builds websites from source and deploys them through FTP.
 gulp [build,deploy] [--site=domain.com] [--filter=glob]
 ```
 
+![Here's a standard build](screen_example.png)
+
 ### build, deploy
 
 Type: `String`
