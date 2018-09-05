@@ -1,6 +1,6 @@
 {
   "name": "disperse",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Builds & deploys websites through FTP",
   "main": "gulpfile.js",
   "scripts": {
@@ -27,10 +27,12 @@
     "gulp-hb": "^7.0.1",
     "gulp-htmlmin": "^4.0.0",
     "gulp-if": "^2.0.2",
+    "gulp-print": "^5.0.0",
     "gulp-rename": "^1.4.0",
     "gulp-sftp": "^0.1.5",
     "gulp-uglify": "^3.0.1",
     "handlebars-layouts": "^3.1.4",
+    "import-lazy": "^3.1.0",
     "js-yaml": "^3.12.0",
     "lazypipe": "^1.0.1",
     "merge-stream": "^1.0.1",

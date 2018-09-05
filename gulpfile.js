@@ -1,30 +1,118 @@
 /* Disperse by Fred Steegmans (u/jabman) */
 
+const path = require('path');
+const fs = require('fs-extra');
 const gulp = require('gulp');
 const gulpif = require('gulp-if');
+const changed = require('gulp-changed');
+const lazypipe = require('lazypipe');
+const through2 = require('through2');
+const fancyLog = require('fancy-log');
+const prettyBytes = require('pretty-bytes');
+const chalk = require('chalk');
+const argv = require('yargs').argv;
+const jsYaml = require('js-yaml');
+const config = jsYaml.safeLoad(fs.readFileSync('config.yaml', 'utf8'));
+const print = require('gulp-print').default;
+
+// Build task dependencies
 const data = require('gulp-data');
-const sftp = require('gulp-sftp');
 const hb = require('gulp-hb');
 const uglify = require('gulp-uglify');
 const cleanCSS = require('gulp-clean-css');
 const htmlmin = require('gulp-htmlmin');
 const rename = require('gulp-rename');
-const changed = require('gulp-changed');
-const path = require('path');
-const fs = require('fs-extra');
-const glob = require('glob-all');
+const globAll = require('glob-all');
 const del = require('del');
 const Vinyl = require('vinyl');
-const vinylFtp = require('vinyl-ftp');
-const lazypipe = require('lazypipe');
-const through2 = require('through2');
-const mergeStream = require('merge-stream');
 const Concat = require('concat-with-sourcemaps');
-const fancyLog = require('fancy-log');
-const prettyBytes = require('pretty-bytes');
-const chalk = require('chalk');
-const argv = require('yargs').argv;
-const config = require('js-yaml').safeLoad(fs.readFileSync('config.yaml', 'utf8'));
+
+// Deploy task dependencies
+const mergeStream = require('merge-stream');
+const vinylFtp = require('vinyl-ftp');
+const sftp = require('gulp-sftp');
+
+// Main gulp tasks are declared first, followed by their subroutines & helpers
+
+// Build task
+function build() {
+
+  // Construct globs matching domains and their templates for processing
+  let globsIn = domains
+    .reduce((res, domain) => {
+      let tpl = config.sites[domain].template;
+      let excl = ['layout.hbs', 'README*', 'LICENSE', 'package*.json', '.git*'];
+      let tplPath = `templates/${tpl}/**/!(${excl.join('|')})`;
+      if (tpl && res.indexOf(tplPath) < 0) {
+        res.push(tplPath);
+      }
+      return res;
+    }, [])
+    .concat(domainGlobs.map(glob => `sites/${glob}`));
+
+  // The build task detects changes in files by comparing their contents
+  let changedOptions = { hasChanged: changed.compareContents };
+
+  // Get a list of previously built files
+  log.builtPrev = globAll('build/*/**/*', { dot: true }, (err, files) => {
+    log.builtPrev = files.map((filePath) => {
+      return filePath.substr(filePath.indexOf('build/') + 6);
+    });
+  });
+
+  // Return a piped stream -- you go gulp
+  return gulp.src(globsIn, { base: 'src/sites/', cwd: 'src/', dot: true })
+    .pipe(log.record())
+    .pipe(gulpif(is.template, assignTemplate()))
+    .pipe(gulpif(is.handlebars, buildHTML()))
+    .pipe(gulpif(is.deflatable, deflateByExtname()))
+    .pipe(gulpif(is.packable, concatByExtname()))
+    .pipe(gulpif(!argv.filter, deleteOrphans()))
+    .pipe(log.built())
+    .pipe(gulpif(is.file, changed('build/', changedOptions)))
+    .pipe(gulp.dest('build/'));
+}
+
+// Deploy task
+function deploy() {
+
+  return mergeStream(domains.map((domain) => {
+    let defaultSite = {
+      host: 'ftp.' + domain,
+      parallel: 4,
+      maxConnections: 20,
+      log: log.deployed(domain),
+    };
+    let site = Object.assign(defaultSite, config.sites[domain]);
+    let srcOptions = { cwd: 'build/' + domain, dot: true };
+    let changedOptions = { hasChanged: compareHashCache };
+
+    switch (site.protocol) {
+      case 'ftp':
+        let conn = vinylFtp.create(site);
+        return gulp.src('**/*', Object.assign(srcOptions, { buffer: false }))
+          .pipe(log.record())
+        /*
+          .pipe(print())
+          .pipe(rename((filePath) => {
+            console.log(filePath);
+            let sepPos = filePath.dirname.indexOf(path.sep);
+            let omitFrom = sepPos === -1 ? filePath.dirname.length : sepPos + 1;
+            // filePath.dirname = filePath.dirname.substring(omitFrom);
+          }))
+        */
+          //.pipe(print())
+          .pipe(conn.differentSize(site.remotePath))
+          .pipe(conn.dest(site.remotePath));
+
+      case 'sftp':
+        return gulp.src(domainGlobs, srcOptions)
+          .pipe(gulpif(is.file, changed('build/', changedOptions)))
+          .pipe(sftp(site));
+    }
+  }));
+
+}
 
 // Gather the domains (sites) affected in this run
 const domains = Object.keys(config.sites)
@@ -32,48 +120,85 @@ const domains = Object.keys(config.sites)
     return argv.site ? (argv.site === domain) : (!!config.sites[domain].active);
   });
 
-// Construct array of globs based on matched domains and cli glob
-const globs = domains
-  // Start out with site template paths.
-  .reduce((res, domain) => {
-    let tpl = config.sites[domain].template;
-    let excl = ['layout.hbs', 'README.md', 'LICENSE', 'package.json', '.git*'];
-    let tplPath = `templates/${tpl}/**/!(${excl.join('|')})`;
-    if (tpl && res.indexOf(tplPath) < 0) {
-      res.push(tplPath);
-    }
-    return res;
-  }, [])
-  // Tack on source files for selected sites
-  .concat(domains.map((domain) => {
-    return `sites/${domain}/**/${argv.filter || '*'}`;
-  }));
-
-// Get a list of previously built files
-const destFiles = glob.sync('build/*/**/*', { dot: true })
-  .map((filePath) => {
-    return filePath.substr(filePath.indexOf('build/') + 6);
-  });
+// Construct globs matching all files for processing (task-agnostic)
+const domainGlobs = domains.map(domain => `${domain}/**/${argv.filter || '*'}`);
 
 // File filters
 const is = {
   file: (file) => !file.isDirectory(),
-  template: (file) => file.path.indexOf('templates/') !== -1,
-  handlebars: (file) => file.extname === '.hbs',
-  deflatable: (file) => {
-    let isInflated = file.basename.indexOf('.min.') === -1;
-    return (['.html', '.js', '.css'].indexOf(file.extname) !== -1 && isInflated);
-  },
-  packable: (file) => ['.js', '.css'].indexOf(file.extname) !== -1,
   HTML: (file) => file.extname === '.html',
   JS: (file) => file.extname === '.js',
   CSS: (file) => file.extname === '.css',
+  template: (file) => file.path.indexOf('templates/') > -1,
+  handlebars: (file) => file.extname === '.hbs',
+  packable: (file) => ['.js', '.css'].indexOf(file.extname) > -1,
+  deflatable: (file) => {
+    let isInflated = file.basename.indexOf('.min.') === -1;
+    return (['.html', '.js', '.css'].indexOf(file.extname) > -1 && isInflated);
+  },
 };
 
-// Initialize per-domain package object
-let package = domains.reduce((o, key) => ({ ...o, [key]: {}}), {});
-let logged = Object.create(package);
-let buildFiles = [];
+// Common globals
+let package = domains.reduce((res, domain) => ({ ...res, [domain]: {}}), {});
+let log = { builtNow: [], builtPrev: {}, fileMeta: {} };
+log.logged = Object.create(package);
+
+log.record = lazypipe()
+  .pipe(through2.obj, (file, _, cb) => {
+    file.originalSize = file.stat.size;
+    let pos = file.path.search(/\/(sites|build)\//g);
+    if (pos !== -1) {
+      let [domain, relative] = file.path.substring(pos + 7).split(path.sep, 2);
+      let metadata = { [relative]: file.originalSize };
+      log.fileMeta[domain] = Object.assign({}, log.fileMeta[domain], metadata);
+    }
+    cb(null, file);
+  });
+
+log.built = lazypipe()
+  .pipe(through2.obj,
+    function onFile(file, _, cb) {
+      let strChange = '';
+      if (file.originalSize !== file.contents.length) {
+        let sizeDiff = file.contents.length - file.originalSize;
+        let pct = 100 * sizeDiff / file.originalSize;
+        strChange = `(${pct > 0 ? '+' : ''}${pct.toFixed().padStart(2)}%)`;
+      }
+      let strSize = prettyBytes(file.contents.length);
+      let domain = file.relative.split(path.sep)[0];
+      let domainColor = log.logged[domain] === true ? 'grey' : 'green';
+      let strDomain = chalk[domainColor](domain + path.sep);
+      let strFile = chalk.green(file.basename);
+      fancyLog(strSize.padEnd(9), strChange.padStart(6), strDomain + strFile);
+      log.logged[domain] = true;
+      cb(null, file);
+    },
+    function onEnd(cb) {
+      domains.forEach(domain => log.logged[domain] = false);
+      cb();
+    }
+  );
+
+// This returns a domain-specific logger function tailored to vinyl-ftp
+log.deployed = (domain) => {
+  return (...args) => {
+    if (args[0].trim() === 'UP') {
+      let domainColor = log.logged[domain] === true ? 'grey' : 'green';
+      let strDomain = chalk[domainColor](domain + path.sep);
+      let [progress, filePath] = args[1].trim().split(' ');
+      let omitFrom = (config.sites[domain].remotePath || '').length + 1;
+      let remoteRelative = filePath.substring(omitFrom);
+      let strFile = chalk.green(remoteRelative);
+      let strChange = `(${progress})`;
+      let fileSize = log.fileMeta[domain][remoteRelative] || 0;
+      let strSize = prettyBytes(fileSize * parseFloat(progress) / 100);
+      fancyLog(strSize.padEnd(9), strChange.padStart(6), strDomain + strFile);
+      log.logged[domain] = true;
+    }
+  };
+};
+
+// Build task subroutines & helpers
 
 let concatByExtname = lazypipe()
   .pipe(through2.obj,
@@ -93,14 +218,14 @@ let concatByExtname = lazypipe()
     function onEnd(cb) {
       for (let domain in package) {
         for (let extname in package[domain]) {
+          let concatObj = package[domain][extname];
           let file = new Vinyl({
-            // contents: package[domain][extname],
-            path: 'src/sites/' + JSON.parse(package[domain][extname].sourceMap).sources[0],
+            path: 'src/sites/' + JSON.parse(concatObj.sourceMap).sources[0],
             base: 'src/sites/',
             basename: 'app.min' + extname,
-            contents: package[domain][extname].content,
+            contents: concatObj.content,
           });
-          file.originalSize = package[domain][extname].originalSize;
+          file.originalSize = concatObj.originalSize;
           this.push(file);
         }
       }
@@ -114,13 +239,13 @@ let assignTemplate = lazypipe()
     function onFile(file, _, cb) {
       if (file.isBuffer()) {
         // file.relative comes in as '../templates/' due to glob.src base
-        let template = file.relative.split(path.sep)[2];
+        let tpl = file.relative.split(path.sep)[2];
         for (let domain of domains) {
-          if (config.sites[domain].template === template) {
-            let clone = file.clone();
-            clone.path = clone.path.replace(`templates/${template}`, `sites/${domain}`);
-            clone.base = 'src/sites/';
-            this.push(clone);
+          if (config.sites[domain].template === tpl) {
+            let out = file.clone();
+            out.path = out.path.replace(`templates/${tpl}`, `sites/${domain}`);
+            out.base = 'src/sites/';
+            this.push(out);
           }
         }
       }
@@ -131,22 +256,30 @@ let assignTemplate = lazypipe()
 let deleteOrphans = lazypipe()
   .pipe(through2.obj,
     function onFile(file, _, cb) {
-      buildFiles.push(file.relative);
+      log.builtNow.push(file.relative);
       this.push(file);
       cb();
     },
     function onEnd(cb) {
-      destFiles.forEach(function(destFile) {
-        if (buildFiles.indexOf(destFile) === -1) { // This destFile wasn't in stream
-          del(destFile, { cwd: 'build/' });
-        }
-      });
-      cb();
+      let deleteFiles = () => {
+        log.builtPrev.forEach(prevFile => {
+          // This prevFile wasn't in the stream
+          if (log.builtNow.indexOf(prevFile) === -1) {
+            del(prevFile, { cwd: 'build/' });
+          }
+        });
+        return cb();
+      };
+      if (Array.isArray(log.builtPrev)) {
+        deleteFiles();
+      } else {
+        log.builtPrev.on('end', deleteFiles);
+      }
     }
   );
 
 let deflateByExtname = lazypipe()
-  .pipe(() => gulpif(is.HTML, htmlmin({ collapseWhitespace: true })))
+  .pipe(() => gulpif(is.HTML, htmlmin()))
   .pipe(() => gulpif(is.JS, uglify()))
   .pipe(() => gulpif(is.CSS, cleanCSS({ debug: true })));
 
@@ -168,16 +301,20 @@ let buildHTML = lazypipe()
   })
   .pipe(rename, { extname: '.html' });
 
-// gulp-changed comparator using a SHA1 hash cache stored in [domain].json files
-let compareHashCache = function (stream, source, targetPath) {
+
+// Deploy task subroutines & helpers
+
+// Comparator function for gulp-changed: a SHA1 cache stored in [domain].json
+let compareHashCache = (stream, source, targetPath) => {
   let domain = source.path.match(RegExp('build/([^/]+)')).pop();
   if (package[domain].cache == null) {
     // Set cacheId to child dir
     let cachePath = path.join('cache', domain + '.json');
     package[domain].cache = fs.readJsonSync(cachePath, {throws: false}) || {};
     stream.setMaxListeners(50);
-    stream.once('end', function() {
-      fs.writeFileSync(cachePath, JSON.stringify(package[domain].cache, null, 2));
+    stream.once('end', () => {
+      let cacheStr = JSON.stringify(package[domain].cache, null, 2);
+      fs.writeFileSync(cachePath, cacheStr);
     });
   }
   let relativeSourcePath = source.path.match(RegExp('build/?(.+)$')).pop();
@@ -189,74 +326,7 @@ let compareHashCache = function (stream, source, targetPath) {
   return Promise.resolve();
 };
 
-let log = {
-  record: lazypipe()
-    .pipe(through2.obj, (file, _, cb) => {
-      file.originalSize = file.contents.length;
-      cb(null, file);
-    }),
-  report: lazypipe()
-    .pipe(through2.obj, (file, _, cb) => {
-      let strChange = '';
-      if (file.originalSize !== file.contents.length) {
-        let pct = 100 * (file.contents.length - file.originalSize) / file.originalSize;
-        strChange = '(' + (pct > 0 ? '+' : '') + pct.toFixed().padStart(2) + '%)';
-      }
-      let strSize = prettyBytes(file.contents.length);
-      let domain = file.relative.split(path.sep)[0];
-      let domainColor = logged[domain] === true ? 'grey' : 'green';
-      let strDomain = chalk[domainColor](domain + path.sep);
-      let strFile = chalk.green(file.basename);
-      fancyLog(strSize.padEnd(9), strChange.padStart(6), strDomain + strFile);
-      logged[domain] = true;
-      cb(null, file);
-    }),
-};
-
-// Build task
-function build() {
-  return gulp.src(globs, { base: 'src/sites/', cwd: 'src/', dot: true })
-    .pipe(log.record())
-    .pipe(gulpif(is.template, assignTemplate()))
-    .pipe(gulpif(is.handlebars, buildHTML()))
-    .pipe(gulpif(is.deflatable, deflateByExtname()))
-    .pipe(gulpif(is.packable, concatByExtname()))
-    // .pipe(print())
-    .pipe(gulpif(!argv.filter, deleteOrphans()))
-    .pipe(log.report())
-    .pipe(gulpif(is.file, changed('build/', { hasChanged: changed.compareContents })))
-    //.pipe(size({ showFiles: false }))
-    .pipe(gulp.dest('build/'));
-}
-
-// Deploy task
-function deploy() {
-
-  return mergeStream(domains.map(function(domain) {
-    let defaultSite = {
-      host: 'ftp.' + domain,
-      parallel: 4,
-      maxConnections: 20,
-      log: console.log,
-    };
-    let site = Object.assign(defaultSite, config.sites[domain]);
-
-    switch (site.protocol) {
-      case 'ftp':
-        var conn = vinylFtp.create(site);
-        return gulp.src(globs, { base: 'build/', cwd: 'build/', dot: true, buffer: false })
-          .pipe(conn.differentSize(site.remotePath))
-          .pipe(conn.dest(site.remotePath));
-
-      case 'sftp':
-        return gulp.src(globs, { base: 'build/', cwd: 'build/', dot: true })
-          .pipe(gulpif(is.file, changed('build/', { hasChanged: compareHashCache })))
-          .pipe(sftp(site));
-    }
-  }));
-
-}
-
 
 exports.default = exports.build = build;
 exports.deploy = deploy;
+exports.disperse = gulp.series(build, deploy);

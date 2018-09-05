@@ -21,7 +21,7 @@ Specify task(s) to perform on site(s).
 
 Generates site files from `src/sites/` into `build/`.
 
-- [Handlebars](http://handlebarsjs.com) files are compiled with `src/layouts` and `src/partials`.
+- [Handlebars](http://handlebarsjs.com) files are compiled with `src/templates` and `src/partials`.
 - Javascript and CSS files are minimized and merged into `app.min.js` and `app.min.css`.
 - Previously built files whose contents haven't changed are left untouched, while leftovers are pruned.
 
