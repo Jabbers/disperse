@@ -5,12 +5,12 @@ Builds websites from source and deploys them through FTP.
 ## Usage
 
 ```
-gulp [build,deploy] [--site=domain.com] [--filter=glob]
+gulp [build,deploy,disperse] [--site=domain.com] [--filter=glob]
 ```
 
 ![Here's a standard build](screen_example.png)
 
-### build, deploy
+### build, deploy, disperse
 
 Type: `String`
 Default: `build`
@@ -31,6 +31,10 @@ Uploads site files from `build/` to their remote location as defined in `config.
 
 - Currently supported protocols are `ftp` and `sftp`.
 - Only changed files are uploaded and there's no pruning.
+
+#### disperse
+
+Performs both the build and deploy tasks in succession.
 
 ### --site
 
