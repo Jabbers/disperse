@@ -1,9 +1,10 @@
 {
   "name": "disperse",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Builds & deploys websites through FTP",
   "main": "gulpfile.js",
   "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
     "prettier": "prettier --single-quote \"gulpfile.js\"",
     "eslint": "eslint gulpfile.js"
   },
@@ -15,6 +16,11 @@
   "license": "Apache-2.0",
   "repository": "github:jabbers/disperse",
   "devDependencies": {
+    "eslint": "^5.5.0",
+    "gulp-print": "^5.0.0",
+    "prettier": "1.14.2"
+  },
+  "dependencies": {
     "chalk": "^2.4.1",
     "concat-with-sourcemaps": "^1.1.0",
     "del": "^3.0.0",
@@ -28,16 +34,13 @@
     "gulp-hb": "^7.0.1",
     "gulp-htmlmin": "^4.0.0",
     "gulp-if": "^2.0.2",
-    "gulp-print": "^5.0.0",
     "gulp-rename": "^1.4.0",
     "gulp-sftp": "^0.1.5",
     "gulp-uglify": "^3.0.1",
     "handlebars-layouts": "^3.1.4",
-    "import-lazy": "^3.1.0",
     "js-yaml": "^3.12.0",
     "lazypipe": "^1.0.1",
     "merge-stream": "^1.0.1",
-    "prettier": "1.14.2",
     "pretty-bytes": "^5.1.0",
     "through2": "^2.0.3",
     "vinyl": "^2.2.0",
