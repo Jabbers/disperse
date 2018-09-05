@@ -91,17 +91,7 @@ function deploy() {
       case 'ftp':
         let conn = vinylFtp.create(site);
         return gulp.src('**/*', Object.assign(srcOptions, { buffer: false }))
-          .pipe(log.record())
-        /*
-          .pipe(print())
-          .pipe(rename((filePath) => {
-            console.log(filePath);
-            let sepPos = filePath.dirname.indexOf(path.sep);
-            let omitFrom = sepPos === -1 ? filePath.dirname.length : sepPos + 1;
-            // filePath.dirname = filePath.dirname.substring(omitFrom);
-          }))
-        */
-          //.pipe(print())
+          .pipe(log.record()) // reporting is done by our vinyl-ftp logger
           .pipe(conn.differentSize(site.remotePath))
           .pipe(conn.dest(site.remotePath));
 
