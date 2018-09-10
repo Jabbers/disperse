@@ -35,6 +35,27 @@ const sftp = require('gulp-sftp');
 
 // Main gulp tasks are declared first, followed by their subroutines & helpers
 
+// Fetch task
+function fetch() {
+  // Fetch, scrape & update all data (external source -> data/providers/*)
+  let jobs = [];
+  if (!argv.provider) { // Gather unique provider jobs
+    jobs = config.sites[domain].jobs || []; // mind site-specific options
+  } else { // Commandline-supplied provider(s) override
+    argv.provider.split(/[, ]+/).forEach(prov => {
+      jobs.push({
+        provider: prov,
+        options: config.providers[prov] || {}
+      });
+    });
+  }
+  return mergeStream(jobs.map(job => {
+    return srcProvider(job)
+      .pipe(gulp.dest('data/providers/' + job.provider))
+      .on('error', onError);
+  }));
+}
+
 // Build task
 function build() {
   // Construct globs matching domains and their templates for processing
@@ -154,16 +175,17 @@ log.built = lazypipe().pipe(
   through2.obj,
   function onFile(file, _, cb) {
     let strChange = '';
-    if (file.originalSize !== file.contents.length) {
-      let sizeDiff = file.contents.length - file.originalSize;
+    let newSize = file.stat ? file.stat.size : (file.contents || []).length;
+    if (file.originalSize !== newSize) {
+      let sizeDiff = newSize - file.originalSize;
       let pct = (100 * sizeDiff) / file.originalSize;
       strChange = `(${pct > 0 ? '+' : ''}${pct.toFixed().padStart(2)}%)`;
     }
-    let strSize = prettyBytes(file.contents.length);
+    let strSize = prettyBytes(newSize);
     let domain = file.relative.split(path.sep)[0];
     let domainColor = log.logged[domain] === true ? 'grey' : 'green';
     let strDomain = chalk[domainColor](domain + path.sep);
-    let strFile = chalk.green(file.basename);
+    let strFile = chalk.green(file.relative.substring(domain.length + 1));
     fancyLog(strSize.padEnd(9), strChange.padStart(6), strDomain + strFile);
     log.logged[domain] = true;
     cb(null, file);
@@ -274,7 +296,17 @@ let deleteOrphans = lazypipe().pipe(
 );
 
 let deflateByExtname = lazypipe()
-  .pipe(() => gulpif(is.HTML, htmlmin()))
+  .pipe(() =>
+    gulpif(
+      is.HTML,
+      htmlmin({
+        collapseWhitespace: true,
+        conservativeCollapse: true,
+        minifyJS: true,
+        minifyCSS: true
+      })
+    )
+  )
   .pipe(() => gulpif(is.JS, uglify()))
   .pipe(() => gulpif(is.CSS, cleanCSS({ debug: true })));
 

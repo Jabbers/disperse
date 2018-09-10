@@ -1,6 +1,6 @@
 {
   "name": "disperse",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Builds & deploys websites through FTP",
   "main": "gulpfile.js",
   "scripts": {
