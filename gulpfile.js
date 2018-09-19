@@ -77,19 +77,19 @@ function build() {
   });
 
   // The build task detects changes in files by comparing their contents
-  let srcOptions = {
-    base: 'src/sites/',
-    cwd: 'src/',
-    dot: true
-  };
+  let srcOptions = { base: 'src/sites/', cwd: 'src/', dot: true, nodir: true };
   let changedOptions = { hasChanged: changed.compareContents };
 
   // Get a list of previously built files
-  log.builtPrev = globAll('build/*/**/*', { dot: true }, (err, files) => {
-    log.builtPrev = files.map(filePath => {
-      return filePath.substr(filePath.indexOf('build/') + 6);
-    });
-  });
+  log.builtPrev = globAll(
+    'build/*/**/*',
+    { dot: true, nodir: true },
+    (err, files) => {
+      log.builtPrev = files.map(filePath => {
+        return filePath.substr(filePath.indexOf('build/') + 6);
+      });
+    }
+  );
 
   // Return a piped stream -- you go gulp
   return gulp
@@ -327,7 +327,7 @@ let buildHTML = lazypipe()
   .pipe(
     through2.obj,
     function onFile(file, _, cb) {
-      if (file.relative.indexOf('partials/') === -1) {
+      if (file.relative.indexOf('/partials') === -1) {
         this.push(file);
       }
       cb();
