@@ -71,7 +71,17 @@ function build() {
     }, [])
     .concat(domainGlobs.map(glob => `sites/${glob}`));
 
+  // Registering custom handlebars helpers
+  hb.handlebars.registerHelper('include', (page, context) => {
+    return `sites/${context.data.local.domain}/partials/${page.name}`;
+  });
+
   // The build task detects changes in files by comparing their contents
+  let srcOptions = {
+    base: 'src/sites/',
+    cwd: 'src/',
+    dot: true
+  };
   let changedOptions = { hasChanged: changed.compareContents };
 
   // Get a list of previously built files
@@ -83,15 +93,16 @@ function build() {
 
   // Return a piped stream -- you go gulp
   return gulp
-    .src(globsIn, { base: 'src/sites/', cwd: 'src/', dot: true })
-    .pipe(log.record())
+    .src(globsIn, srcOptions)
+    //.pipe(require('gulp-print').default())
     .pipe(gulpif(is.template, assignTemplate()))
     .pipe(gulpif(is.handlebars, buildHTML()))
+    .pipe(log.record())
     .pipe(gulpif(is.deflatable, deflateByExtname()))
     .pipe(gulpif(is.packable, concatByExtname()))
     .pipe(gulpif(!argv.filter, deleteOrphans()))
-    .pipe(log.built())
     .pipe(gulpif(is.file, changed('build/', changedOptions)))
+    .pipe(log.built())
     .pipe(gulp.dest('build/'));
 }
 
@@ -135,7 +146,7 @@ const domains = Object.keys(config.sites).filter(domain => {
 });
 
 // Construct globs matching all files for processing (task-agnostic)
-const domainGlobs = domains.map(domain => `${domain}/**/${argv.filter || '*'}`);
+const domainGlobs = domains.map(domain => `${domain}/**/${argv.filter || '*'}`); //!(partials)/*
 
 // File filters
 const is = {
@@ -160,7 +171,7 @@ log.logged = Object.create(package);
 log.record = lazypipe().pipe(
   through2.obj,
   (file, _, cb) => {
-    file.originalSize = file.stat.size;
+    file.originalSize = (file.contents || []).length;
     let pos = file.path.search(/\/(sites|build)\//g);
     if (pos !== -1) {
       let [domain, relative] = file.path.substring(pos + 7).split(path.sep, 2);
@@ -174,20 +185,22 @@ log.record = lazypipe().pipe(
 log.built = lazypipe().pipe(
   through2.obj,
   function onFile(file, _, cb) {
-    let strChange = '';
-    let newSize = file.stat ? file.stat.size : (file.contents || []).length;
-    if (file.originalSize !== newSize) {
-      let sizeDiff = newSize - file.originalSize;
-      let pct = (100 * sizeDiff) / file.originalSize;
-      strChange = `(${pct > 0 ? '+' : ''}${pct.toFixed().padStart(2)}%)`;
+    if (!file.isDirectory()) {
+      let strChange = '';
+      let newSize = (file.contents || []).length;
+      if (file.originalSize !== newSize) {
+        let sizeDiff = newSize - file.originalSize;
+        let pct = (100 * sizeDiff) / file.originalSize;
+        strChange = `(${pct > 0 ? '+' : ''}${pct.toFixed().padStart(2)}%)`;
+      }
+      let strSize = prettyBytes(newSize);
+      let domain = file.relative.split(path.sep)[0];
+      let domainColor = log.logged[domain] === true ? 'grey' : 'green';
+      let strDomain = chalk[domainColor](domain + path.sep);
+      let strFile = chalk.green(file.relative.substring(domain.length + 1));
+      fancyLog(strSize.padEnd(9), strChange.padStart(6), strDomain + strFile);
+      log.logged[domain] = true;
     }
-    let strSize = prettyBytes(newSize);
-    let domain = file.relative.split(path.sep)[0];
-    let domainColor = log.logged[domain] === true ? 'grey' : 'green';
-    let strDomain = chalk[domainColor](domain + path.sep);
-    let strFile = chalk.green(file.relative.substring(domain.length + 1));
-    fancyLog(strSize.padEnd(9), strChange.padStart(6), strDomain + strFile);
-    log.logged[domain] = true;
     cb(null, file);
   },
   function onEnd(cb) {
@@ -312,6 +325,15 @@ let deflateByExtname = lazypipe()
 
 let buildHTML = lazypipe()
   .pipe(
+    through2.obj,
+    function onFile(file, _, cb) {
+      if (file.relative.indexOf('partials/') === -1) {
+        this.push(file);
+      }
+      cb();
+    }
+  )
+  .pipe(
     data,
     (file, cb) => {
       let domain = file.relative.split('/').shift();
@@ -323,10 +345,13 @@ let buildHTML = lazypipe()
     hb,
     {
       debug: false,
+      base: 'src/',
+      handlebars: hb.handlebars,
       helpers: ['node_modules/handlebars-layouts'],
       partials: [
         'src/templates/*/*.hbs', // template layouts
-        'src/partials/*.hbs' // general partials
+        'src/partials/*.hbs', // general partials
+        'src/sites/*/partials/*.hbs', // site partials
       ]
     }
   )
