@@ -72,8 +72,13 @@ function build() {
     .concat(domainGlobs.map(glob => `sites/${glob}`));
 
   // Registering custom handlebars helpers
-  hb.handlebars.registerHelper('include', (page, context) => {
-    return `sites/${context.data.local.domain}/partials/${page.name}`;
+  hb.handlebars.registerHelper({
+    // Include per-domain partials by name property {{(include this)}}
+    include: (page, context) => {
+      return `sites/${context.data.local.domain}/partials/${page.name}`;
+    },
+    prev: (obj, index, prop) => obj[index - 1][prop],
+    next: (obj, index, prop) => obj[index + 1][prop]
   });
 
   // The build task detects changes in files by comparing their contents
