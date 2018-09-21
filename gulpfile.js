@@ -176,7 +176,8 @@ log.logged = Object.create(package);
 log.record = lazypipe().pipe(
   through2.obj,
   (file, _, cb) => {
-    file.originalSize = (file.contents || []).length;
+    file.originalSize =
+      (file.contents || []).length || (file.stat ? file.stat.size : 0);
     let pos = file.path.search(/\/(sites|build)\//g);
     if (pos !== -1) {
       let [domain, relative] = file.path.substring(pos + 7).split(path.sep, 2);
@@ -192,7 +193,8 @@ log.built = lazypipe().pipe(
   function onFile(file, _, cb) {
     if (!file.isDirectory()) {
       let strChange = '';
-      let newSize = (file.contents || []).length;
+      let newSize =
+        (file.contents || []).length || (file.stat ? file.stat.size : 0);
       if (file.originalSize !== newSize) {
         let sizeDiff = newSize - file.originalSize;
         let pct = (100 * sizeDiff) / file.originalSize;
