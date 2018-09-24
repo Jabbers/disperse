@@ -150,8 +150,8 @@ const domains = Object.keys(config.sites).filter(domain => {
   return argv.site ? argv.site === domain : !!config.sites[domain].active;
 });
 
-// Construct globs matching all files for processing (task-agnostic)
-const domainGlobs = domains.map(domain => `${domain}/**/${argv.filter || '*'}`); //!(partials)/*
+// Make globs matching all files for processing (task-agnostic) !(partials)/*
+const domainGlobs = domains.map(domain => `${domain}/**/${argv.filter || '*'}`);
 
 // File filters
 const is = {
