@@ -145,8 +145,13 @@ function deploy() {
   );
 }
 
-// Gather the domains (sites) affected in this run
+// Gather domain/site names affected in this run while doing some config checks
 const domains = Object.keys(config.sites).filter(domain => {
+  // Ensuring remotePath exists and starts with a slash
+  let rPath = config.sites[domain].remotePath;
+  rPath = rPath.length ? rPath : '';
+  config.sites[domain].remotePath = (rPath.startsWith('/') ? '' : '/') + rPath;
+  // Returning domain (if runnable)
   return argv.site ? argv.site === domain : !!config.sites[domain].active;
 });
 
@@ -223,7 +228,7 @@ log.deployed = domain => {
       let domainColor = log.logged[domain] === true ? 'grey' : 'green';
       let strDomain = chalk[domainColor](domain + path.sep);
       let [progress, filePath] = args[1].trim().split(' ');
-      let omitFrom = (config.sites[domain].remotePath || '').length + 1;
+      let omitFrom = (config.sites[domain].remotePath).length + 1;
       let remoteRelative = filePath.substring(omitFrom);
       let strFile = chalk.green(remoteRelative);
       let strChange = `(${progress})`;
