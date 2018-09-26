@@ -87,7 +87,7 @@ function build() {
 
   // Get a list of previously built files
   log.builtPrev = globAll(
-    'build/*/**/*',
+    `build/{${domains.join(',')}}/**/*`,
     { dot: true, nodir: true },
     (err, files) => {
       log.builtPrev = files.map(filePath => {
@@ -326,7 +326,7 @@ let deflateByExtname = lazypipe()
       is.HTML,
       htmlmin({
         collapseWhitespace: true,
-        conservativeCollapse: true,
+        conservativeCollapse: false,
         minifyJS: true,
         minifyCSS: true
       })
