@@ -39,9 +39,11 @@ const sftp = require('gulp-sftp');
 function fetch() {
   // Fetch, scrape & update all data (external source -> data/providers/*)
   let jobs = [];
-  if (!argv.provider) { // Gather unique provider jobs
+  if (!argv.provider) {
+    // Gather unique provider jobs
     jobs = config.sites[domain].jobs || []; // mind site-specific options
-  } else { // Commandline-supplied provider(s) override
+  } else {
+    // Commandline-supplied provider(s) override
     argv.provider.split(/[, ]+/).forEach(prov => {
       jobs.push({
         provider: prov,
@@ -49,11 +51,13 @@ function fetch() {
       });
     });
   }
-  return mergeStream(jobs.map(job => {
-    return srcProvider(job)
-      .pipe(gulp.dest('data/providers/' + job.provider))
-      .on('error', onError);
-  }));
+  return mergeStream(
+    jobs.map(job => {
+      return srcProvider(job)
+        .pipe(gulp.dest('data/providers/' + job.provider))
+        .on('error', onError);
+    })
+  );
 }
 
 // Build task
@@ -81,25 +85,21 @@ function build() {
     next: (obj, index, prop) => obj[index + 1][prop]
   });
 
+  // Get a list of previously built files
+  log.builtPrev = globAll(
+    `+(${domains.join('|')})/**/*`,
+    { base: 'build/', cwd: 'build/', dot: true, nodir: true },
+    (err, files) => (log.builtPrev = files)
+  );
+
   // The build task detects changes in files by comparing their contents
   let srcOptions = { base: 'src/sites/', cwd: 'src/', dot: true, nodir: true };
   let changedOptions = { hasChanged: changed.compareContents };
 
-  // Get a list of previously built files
-  log.builtPrev = globAll(
-    `build/{${domains.join(',')}}/**/*`,
-    { dot: true, nodir: true },
-    (err, files) => {
-      log.builtPrev = files.map(filePath => {
-        return filePath.substr(filePath.indexOf('build/') + 6);
-      });
-    }
-  );
-
   // Return a piped stream -- you go gulp
+  // Handy debugging pipe: .pipe(require('gulp-print').default())
   return gulp
     .src(globsIn, srcOptions)
-    //.pipe(require('gulp-print').default())
     .pipe(gulpif(is.template, assignTemplate()))
     .pipe(gulpif(is.handlebars, buildHTML()))
     .pipe(log.record())
@@ -228,7 +228,7 @@ log.deployed = domain => {
       let domainColor = log.logged[domain] === true ? 'grey' : 'green';
       let strDomain = chalk[domainColor](domain + path.sep);
       let [progress, filePath] = args[1].trim().split(' ');
-      let omitFrom = (config.sites[domain].remotePath).length + 1;
+      let omitFrom = config.sites[domain].remotePath.length + 1;
       let remoteRelative = filePath.substring(omitFrom);
       let strFile = chalk.green(remoteRelative);
       let strChange = `(${progress})`;
@@ -363,7 +363,7 @@ let buildHTML = lazypipe()
       partials: [
         'src/templates/*/*.hbs', // template layouts
         'src/partials/*.hbs', // general partials
-        'src/sites/*/partials/*.hbs', // site partials
+        'src/sites/*/partials/*.hbs' // site partials
       ]
     }
   )
